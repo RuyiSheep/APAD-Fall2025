@@ -3,7 +3,7 @@ from pymongo.collection import Collection
 
 # Collection helper
 def projects_col(client) -> Collection:
-    return client["GitHard"]["projects"]
+    return client["ProjectService"]["projects"]
 
 # Schema we will use going forward:
 # {
@@ -45,3 +45,43 @@ def add_member(client, project_id: str, user_id: str) -> str:
         return "Project already joined"
     col.update_one({"projectId": project_id}, {"$push": {"users": user_id}})
     return "Project joined successfully"
+
+def update_hw_usage(client, project_id: str, hw_set_name: str, qty: int) -> Tuple[bool, str]:
+    """
+    Update hardware usage for a project.
+    Args:
+        client: MongoClient instance
+        project_id: Project ID
+        hw_set_name: Hardware set name (e.g., "HWSet1")
+        qty: Quantity to add (positive for checkout, negative for checkin)
+    Returns:
+        Tuple[bool, str]: (success, message)
+    """
+    col = projects_col(client)
+    proj = col.find_one({"projectId": project_id})
+    if not proj:
+        return False, "Project does not exist"
+    
+    # Get current hwSets or initialize empty dict
+    hw_sets = proj.get("hwSets", {})
+    current_qty = hw_sets.get(hw_set_name, 0)
+    new_qty = current_qty + qty
+    
+    # Validate: can't have negative quantity
+    if new_qty < 0:
+        return False, "Cannot check in more than currently checked out"
+    
+    # Update hwSets
+    if new_qty == 0:
+        # Remove the key if quantity becomes zero
+        hw_sets.pop(hw_set_name, None)
+    else:
+        hw_sets[hw_set_name] = new_qty
+    
+    # Update the project document
+    col.update_one(
+        {"projectId": project_id},
+        {"$set": {"hwSets": hw_sets}}
+    )
+    
+    return True, "Hardware usage updated successfully"
